@@ -58,8 +58,12 @@ def fetch_dblp_papers(conference: ConferenceConfig, year: int, limit: int) -> Li
 def enrich_with_openalex(papers: List[Paper]) -> List[Paper]:
     enriched: List[Paper] = []
     for paper in papers:
-        enriched.append(_enrich_single_paper(paper))
-        time.sleep(0.1)
+        try:
+            enriched.append(_enrich_single_paper(paper))
+        except Exception as exc:
+            print(f"Warning: OpenAlex enrichment failed for '{paper.title[:80]}': {exc}")
+            enriched.append(paper)
+        time.sleep(0.5)
     return enriched
 
 
@@ -78,6 +82,8 @@ def _enrich_single_paper(paper: Paper) -> Paper:
     abstract_index = best.get("abstract_inverted_index") or {}
     paper.abstract = _reconstruct_abstract(abstract_index)
     paper.openalex_url = best.get("id", "")
+    paper.paper_url = _extract_paper_url(best)
+    paper.pdf_url = _extract_pdf_url(best)
     if not paper.doi:
         paper.doi = best.get("doi", "") or ""
     return paper
@@ -138,3 +144,41 @@ def _deduplicate(papers: List[Paper]) -> List[Paper]:
         seen.add(key)
         unique.append(paper)
     return unique
+
+
+def _extract_paper_url(candidate: Dict[str, object]) -> str:
+    primary_location = candidate.get("primary_location") or {}
+    if isinstance(primary_location, dict):
+        landing_page_url = primary_location.get("landing_page_url", "")
+        if landing_page_url:
+            return str(landing_page_url)
+
+    best_oa_location = candidate.get("best_oa_location") or {}
+    if isinstance(best_oa_location, dict):
+        landing_page_url = best_oa_location.get("landing_page_url", "")
+        if landing_page_url:
+            return str(landing_page_url)
+    return ""
+
+
+def _extract_pdf_url(candidate: Dict[str, object]) -> str:
+    primary_location = candidate.get("primary_location") or {}
+    if isinstance(primary_location, dict):
+        pdf_url = primary_location.get("pdf_url", "")
+        if pdf_url:
+            return str(pdf_url)
+
+    best_oa_location = candidate.get("best_oa_location") or {}
+    if isinstance(best_oa_location, dict):
+        pdf_url = best_oa_location.get("pdf_url", "")
+        if pdf_url:
+            return str(pdf_url)
+
+    locations = candidate.get("locations") or []
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+        pdf_url = location.get("pdf_url", "")
+        if pdf_url:
+            return str(pdf_url)
+    return ""
