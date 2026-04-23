@@ -1,3 +1,4 @@
+import arxiv
 import time
 import urllib.parse
 from typing import Dict, List
@@ -87,6 +88,8 @@ def _enrich_single_paper(paper: Paper) -> Paper:
     paper.arxiv_url = _build_arxiv_abs_url(paper.arxiv_id)
     paper.arxiv_pdf_url = _build_arxiv_pdf_url(paper.arxiv_id)
     paper.pdf_url = _extract_pdf_url(best)
+    if not paper.pdf_url:
+        paper.pdf_url = _search_arxiv_for_pdf(paper.title, paper.year)
     if not paper.doi:
         paper.doi = best.get("doi", "") or ""
     return paper
@@ -272,3 +275,19 @@ def _build_arxiv_pdf_url(arxiv_id: str) -> str:
 def _is_arxiv_url(url: str) -> bool:
     lowered = url.lower()
     return "arxiv.org/abs/" in lowered or "arxiv.org/pdf/" in lowered
+
+
+def _search_arxiv_for_pdf(title: str, year: int) -> str:
+    try:
+        search = arxiv.Search(
+            query=f'ti:"{title}"',
+            max_results=5,
+            sort_by=arxiv.SortCriterion.Relevance,
+        )
+        for result in search.results():
+            # Check if year matches
+            if result.published.year == year:
+                return result.pdf_url
+    except Exception as exc:
+        print(f"Warning: arXiv search failed for '{title[:50]}': {exc}")
+    return ""
