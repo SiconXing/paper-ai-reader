@@ -11,6 +11,11 @@ class Paper:
     dblp_url: str = ""
     doi: str = ""
     openalex_url: str = ""
+    paper_url: str = ""
+    arxiv_id: str = ""
+    arxiv_url: str = ""
+    arxiv_pdf_url: str = ""
+    pdf_url: str = ""
     interest_score: Optional[int] = None
     recommendation: str = ""
     reason: str = ""

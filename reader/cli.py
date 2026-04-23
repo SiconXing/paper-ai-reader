@@ -1,15 +1,14 @@
 import argparse
+import json
 from pathlib import Path
 
+from loader.downloader import download_papers
 from .output import write_csv, write_json, write_report
 from .pipeline import run_pipeline
 from .sources import CONFERENCES
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Grab public papers from major CS conferences and rank them with AI."
-    )
+def add_reader_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         "--conferences",
         nargs="*",
@@ -20,7 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--limit-per-conf",
         type=int,
-        default=50,
+        default=10,
         help="Maximum number of papers to fetch for each conference.",
     )
     parser.add_argument(
@@ -69,6 +68,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional report path. Defaults to the JSON output path with .md suffix.",
     )
     parser.add_argument(
+        "--download-pdfs",
+        action="store_true",
+        help="Download PDFs for selected papers after the pipeline finishes.",
+    )
+    parser.add_argument(
+        "--pdf-dir",
+        type=str,
+        default="downloads/papers",
+        help="Directory used when --download-pdfs is enabled.",
+    )
+    parser.add_argument(
+        "--pdf-log-output",
+        type=str,
+        default="",
+        help="Optional JSON log path for PDF download results.",
+    )
+    parser.add_argument(
+        "--download-all",
+        action="store_true",
+        help="When downloading PDFs, include unselected papers too.",
+    )
+    parser.add_argument(
+        "--max-downloads",
+        type=int,
+        default=0,
+        help="Maximum number of PDFs to download. 0 means no limit.",
+    )
+    parser.add_argument(
         "--list-conferences",
         action="store_true",
         help="Print the supported conference aliases and exit.",
@@ -76,20 +103,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
-
+def execute_reader(args: argparse.Namespace) -> int:
     if args.list_conferences:
         for alias, config in sorted(CONFERENCES.items()):
             print(f"{alias}\t{config.name}\t{config.stream_id}")
         return 0
 
     if not args.year:
-        parser.error("--year is required unless --list-conferences is used.")
+        raise ValueError("--year is required unless --list-conferences is used.")
 
     if not args.skip_ai and not args.interest.strip():
-        parser.error("--interest is required unless --skip-ai is used.")
+        raise ValueError("--interest is required unless --skip-ai is used.")
 
     results = run_pipeline(
         conference_aliases=args.conferences,
@@ -121,6 +145,21 @@ def main() -> int:
             min_score=args.min_score,
         )
 
+    download_results = []
+    if args.download_pdfs:
+        download_results = download_papers(
+            results,
+            output_dir=Path(args.pdf_dir),
+            selected_only=not args.download_all,
+            max_papers=args.max_downloads,
+        )
+        write_json(output_path, results)
+        if args.pdf_log_output:
+            log_path = Path(args.pdf_log_output)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(json.dumps(download_results, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"Wrote PDF download log to {log_path}")
+
     total = len(results)
     kept = sum(1 for item in results if item.get("selected", True))
     print(f"Wrote {total} papers to {output_path}")
@@ -128,6 +167,14 @@ def main() -> int:
         print(f"Wrote CSV to {csv_path}")
     if report_path:
         print(f"Wrote report to {report_path}")
+    if args.download_pdfs:
+        downloaded = sum(1 for row in download_results if row["status"] == "downloaded")
+        skipped = sum(1 for row in download_results if row["status"] == "skipped")
+        missing_pdf = sum(1 for row in download_results if row["status"] == "missing_pdf")
+        failed = sum(1 for row in download_results if row["status"] == "failed")
+        print(
+            f"PDF download summary: downloaded={downloaded}, skipped={skipped}, missing_pdf={missing_pdf}, failed={failed}"
+        )
     if not args.skip_ai:
         print(f"Selected {kept} papers with score >= {args.min_score}")
     return 0

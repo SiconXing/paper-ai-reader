@@ -1,4 +1,5 @@
 import arxiv
+from difflib import SequenceMatcher
 import time
 import urllib.parse
 from typing import Dict, List
@@ -77,21 +78,25 @@ def _enrich_single_paper(paper: Paper) -> Paper:
     payload = get_json(OPENALEX_API, params=params)
     candidates = payload.get("results", [])
     best = _select_best_match(candidates, paper.title)
-    if not best:
-        return paper
+    if best:
+        abstract_index = best.get("abstract_inverted_index") or {}
+        paper.abstract = _reconstruct_abstract(abstract_index)
+        paper.openalex_url = best.get("id", "")
+        paper.paper_url = _extract_paper_url(best)
+        paper.arxiv_id = _extract_arxiv_id(best)
+        paper.arxiv_url = _build_arxiv_abs_url(paper.arxiv_id)
+        paper.arxiv_pdf_url = _build_arxiv_pdf_url(paper.arxiv_id)
+        paper.pdf_url = _extract_pdf_url(best)
+        if not paper.doi:
+            paper.doi = best.get("doi", "") or ""
 
-    abstract_index = best.get("abstract_inverted_index") or {}
-    paper.abstract = _reconstruct_abstract(abstract_index)
-    paper.openalex_url = best.get("id", "")
-    paper.paper_url = _extract_paper_url(best)
-    paper.arxiv_id = _extract_arxiv_id(best)
-    paper.arxiv_url = _build_arxiv_abs_url(paper.arxiv_id)
-    paper.arxiv_pdf_url = _build_arxiv_pdf_url(paper.arxiv_id)
-    paper.pdf_url = _extract_pdf_url(best)
-    if not paper.pdf_url:
-        paper.pdf_url = _search_arxiv_for_pdf(paper.title, paper.year)
-    if not paper.doi:
-        paper.doi = best.get("doi", "") or ""
+    if not paper.arxiv_pdf_url and not paper.pdf_url:
+        arxiv_match = find_arxiv_match_by_title(paper.title, paper.year)
+        if arxiv_match:
+            paper.arxiv_id = arxiv_match["arxiv_id"]
+            paper.arxiv_url = arxiv_match["arxiv_url"]
+            paper.arxiv_pdf_url = arxiv_match["arxiv_pdf_url"]
+            paper.pdf_url = arxiv_match["arxiv_pdf_url"]
     return paper
 
 
@@ -278,16 +283,76 @@ def _is_arxiv_url(url: str) -> bool:
 
 
 def _search_arxiv_for_pdf(title: str, year: int) -> str:
+    match = find_arxiv_match_by_title(title, year)
+    if not match:
+        return ""
+    return str(match["arxiv_pdf_url"])
+
+
+def find_arxiv_match_by_title(title: str, year: int) -> Dict[str, str]:
+    client = arxiv.Client()
+    queries = [
+        f'ti:"{title}"',
+        title,
+    ]
+    best_match: Dict[str, str] = {}
+    best_score = 0.0
+    seen_ids = set()
+
     try:
-        search = arxiv.Search(
-            query=f'ti:"{title}"',
-            max_results=5,
-            sort_by=arxiv.SortCriterion.Relevance,
-        )
-        for result in search.results():
-            # Check if year matches
-            if result.published.year == year:
-                return result.pdf_url
+        for query in queries:
+            search = arxiv.Search(
+                query=query,
+                max_results=10,
+                sort_by=arxiv.SortCriterion.Relevance,
+            )
+            for result in client.results(search):
+                arxiv_id = str(getattr(result, "get_short_id", lambda: "")()).strip()
+                if not arxiv_id:
+                    arxiv_id = _normalize_arxiv_id(getattr(result, "entry_id", ""))
+                if arxiv_id in seen_ids:
+                    continue
+                seen_ids.add(arxiv_id)
+
+                score = _score_arxiv_candidate(title, year, result.title, result.published.year)
+                if score > best_score:
+                    best_score = score
+                    best_match = {
+                        "arxiv_id": arxiv_id,
+                        "arxiv_url": _build_arxiv_abs_url(arxiv_id),
+                        "arxiv_pdf_url": _build_arxiv_pdf_url(arxiv_id),
+                    }
     except Exception as exc:
         print(f"Warning: arXiv search failed for '{title[:50]}': {exc}")
-    return ""
+        return {}
+
+    if best_score < 0.88:
+        return {}
+    return best_match
+
+
+def _score_arxiv_candidate(query_title: str, query_year: int, candidate_title: str, candidate_year: int) -> float:
+    normalized_query = _normalize_for_match(query_title)
+    normalized_candidate = _normalize_for_match(candidate_title)
+    similarity = SequenceMatcher(None, normalized_query, normalized_candidate).ratio()
+
+    if normalized_query == normalized_candidate:
+        similarity += 0.2
+    elif normalized_query in normalized_candidate or normalized_candidate in normalized_query:
+        similarity += 0.1
+
+    year_gap = abs(query_year - candidate_year)
+    if year_gap == 0:
+        similarity += 0.03
+    elif year_gap == 1:
+        similarity += 0.02
+    elif year_gap == 2:
+        similarity += 0.01
+
+    return similarity
+
+
+def _normalize_for_match(text: str) -> str:
+    lowered = _cleanup_title(text).lower()
+    alnum_only = "".join(ch if ch.isalnum() else " " for ch in lowered)
+    return " ".join(alnum_only.split())

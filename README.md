@@ -10,6 +10,7 @@
 - 支持导出 `JSON`
 - 可选导出 `CSV`
 - 可选生成 `Markdown` 摘要报告
+- 可选下载筛选后的论文 PDF
 
 ## 支持的会议
 
@@ -56,7 +57,7 @@ OPENAI_MODEL=gpt-4.1-mini
 先抓取并按兴趣筛选：
 
 ```bash
-python3 main.py \
+python3 main.py collect \
   --conferences cvpr iccv iclr nips \
   --year 2025 \
   --limit-per-conf 50 \
@@ -70,7 +71,7 @@ python3 main.py \
 如果只想先抓数据、不调用 AI：
 
 ```bash
-python3 main.py \
+python3 main.py collect \
   --conferences acl emnlp naacl \
   --year 2024 \
   --limit-per-conf 30 \
@@ -82,7 +83,7 @@ python3 main.py \
 如果你想自定义增强项输出路径：
 
 ```bash
-python3 main.py \
+python3 main.py collect \
   --conferences iclr icml nips \
   --year 2025 \
   --interest "我关注 Agent、代码智能、推理和高效训练" \
@@ -96,7 +97,28 @@ python3 main.py \
 查看支持的会议缩写：
 
 ```bash
-python3 main.py --list-conferences
+python3 main.py collect --list-conferences
+```
+
+下载筛选后的论文 PDF：
+
+```bash
+python3 main.py collect \
+  --conferences cvpr iclr \
+  --year 2025 \
+  --interest "我关注 Agent、多模态和文档理解" \
+  --download-pdfs \
+  --pdf-dir downloads/papers \
+  --output data/papers.json
+```
+
+也可以基于已有结果文件单独下载：
+
+```bash
+python3 main.py download \
+  --input data/papers.json \
+  --output-dir downloads/papers \
+  --log-output data/download_log.json
 ```
 
 ## 输出字段
@@ -113,11 +135,32 @@ python3 main.py --list-conferences
 - `interest_score`
 - `recommendation`
 - `reason`
+- `paper_url`
+- `arxiv_id`
+- `arxiv_url`
+- `arxiv_pdf_url`
+- `pdf_url`
 
 开启增强项后：
 
 - `--export-csv` 会生成方便筛选和排序的表格文件
 - `--generate-report` 会生成一份 Markdown 报告，包含统计摘要、会议分布、Top 论文和推荐阅读列表
+- `--download-pdfs` 会尝试下载筛选后的公开 PDF 到本地目录
+
+下载优先级：
+
+- 优先使用 `arxiv_pdf_url`
+- 如果没有可用的 arXiv PDF，再回退到 `pdf_url`
+- 如果 `paper_url` 本身是 arXiv 论文页，也会自动推导 PDF 链接
+
+## Loader
+
+项目新增了 `loader/` 目录：
+
+- `loader/downloader.py` 负责读取结果并下载 PDF
+- `loader/cli.py` 提供 `main.py` 复用的下载参数和执行逻辑
+
+下载逻辑默认只处理 `selected=true` 的论文；如果某篇论文没有可用的公开下载源，它会跳过并记录状态。
 
 ## 实现思路
 
