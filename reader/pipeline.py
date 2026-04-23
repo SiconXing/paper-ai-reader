@@ -1,4 +1,5 @@
 from typing import List
+from tqdm import tqdm
 
 from .ai_filter import score_papers_with_ai
 from .fetchers import enrich_with_openalex, fetch_dblp_papers
@@ -15,18 +16,30 @@ def run_pipeline(
     skip_ai: bool,
 ) -> List[dict]:
     papers: List[Paper] = []
-    for alias in conference_aliases:
+    
+    # 显示会议论文获取进度
+    for alias in tqdm(conference_aliases, desc="Fetching papers from conferences"):
         key = alias.lower()
         if key not in CONFERENCES:
             raise ValueError(f"Unsupported conference alias: {alias}")
         conference = CONFERENCES[key]
         papers.extend(fetch_dblp_papers(conference, year, limit_per_conf))
 
-    papers = enrich_with_openalex(papers)
+    # 显示 OpenAlex 富集进度
+    papers = list(tqdm(
+        enrich_with_openalex(papers),
+        total=len(papers),
+        desc="Enriching papers with OpenAlex"
+    ))
 
     if skip_ai:
         return [paper.to_dict() for paper in papers]
 
-    papers = score_papers_with_ai(papers, interest=interest, min_score=min_score)
+    # 显示 AI 评分进度
+    papers = list(tqdm(
+        score_papers_with_ai(papers, interest=interest, min_score=min_score),
+        total=len(papers),
+        desc="Scoring papers with AI"
+    ))
     papers.sort(key=lambda item: item.interest_score or 0, reverse=True)
     return [paper.to_dict() for paper in papers]
