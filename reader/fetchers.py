@@ -244,10 +244,14 @@ def _normalize_arxiv_id(value: str) -> str:
         "arxiv:",
         "ArXiv:",
     )
+    matched = False
     for prefix in prefixes:
         if normalized.startswith(prefix):
             normalized = normalized[len(prefix):]
+            matched = True
             break
+    if not matched:
+        return ""
     normalized = normalized.removesuffix(".pdf")
     normalized = normalized.strip("/")
     return normalized if normalized else ""
