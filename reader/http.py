@@ -18,7 +18,7 @@ def get_json(url: str, params: Optional[Dict[str, Any]] = None) -> Any:
         url = f"{url}{separator}{query}"
     request = urllib.request.Request(url, headers=DEFAULT_HEADERS)
     context = ssl.create_default_context()
-    with urllib.request.urlopen(request, context=context, timeout=30) as response:
+    with urllib.request.urlopen(request, context=context, timeout=60) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

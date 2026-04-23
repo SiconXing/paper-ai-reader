@@ -1,3 +1,7 @@
+import dotenv
+
+dotenv.load_dotenv()
+
 from reader.cli import main
 
 
