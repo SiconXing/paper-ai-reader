@@ -83,6 +83,9 @@ def _enrich_single_paper(paper: Paper) -> Paper:
     paper.abstract = _reconstruct_abstract(abstract_index)
     paper.openalex_url = best.get("id", "")
     paper.paper_url = _extract_paper_url(best)
+    paper.arxiv_id = _extract_arxiv_id(best)
+    paper.arxiv_url = _build_arxiv_abs_url(paper.arxiv_id)
+    paper.arxiv_pdf_url = _build_arxiv_pdf_url(paper.arxiv_id)
     paper.pdf_url = _extract_pdf_url(best)
     if not paper.doi:
         paper.doi = best.get("doi", "") or ""
@@ -166,13 +169,25 @@ def _extract_pdf_url(candidate: Dict[str, object]) -> str:
     if isinstance(primary_location, dict):
         pdf_url = primary_location.get("pdf_url", "")
         if pdf_url:
-            return str(pdf_url)
+            pdf_url_str = str(pdf_url)
+            if _is_arxiv_url(pdf_url_str):
+                arxiv_id = _normalize_arxiv_id(pdf_url_str)
+                if arxiv_id:
+                    return _build_arxiv_pdf_url(arxiv_id)
+            else:
+                return pdf_url_str
 
     best_oa_location = candidate.get("best_oa_location") or {}
     if isinstance(best_oa_location, dict):
         pdf_url = best_oa_location.get("pdf_url", "")
         if pdf_url:
-            return str(pdf_url)
+            pdf_url_str = str(pdf_url)
+            if _is_arxiv_url(pdf_url_str):
+                arxiv_id = _normalize_arxiv_id(pdf_url_str)
+                if arxiv_id:
+                    return _build_arxiv_pdf_url(arxiv_id)
+            else:
+                return pdf_url_str
 
     locations = candidate.get("locations") or []
     for location in locations:
@@ -180,5 +195,76 @@ def _extract_pdf_url(candidate: Dict[str, object]) -> str:
             continue
         pdf_url = location.get("pdf_url", "")
         if pdf_url:
-            return str(pdf_url)
+            pdf_url_str = str(pdf_url)
+            if _is_arxiv_url(pdf_url_str):
+                arxiv_id = _normalize_arxiv_id(pdf_url_str)
+                if arxiv_id:
+                    return _build_arxiv_pdf_url(arxiv_id)
+            else:
+                return pdf_url_str
     return ""
+
+
+def _extract_arxiv_id(candidate: Dict[str, object]) -> str:
+    ids = candidate.get("ids") or {}
+    if isinstance(ids, dict):
+        arxiv_value = str(ids.get("arxiv", "")).strip()
+        arxiv_id = _normalize_arxiv_id(arxiv_value)
+        if arxiv_id:
+            return arxiv_id
+
+    locations = candidate.get("locations") or []
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+        for key in ("landing_page_url", "pdf_url"):
+            url = str(location.get(key, "")).strip()
+            arxiv_id = _normalize_arxiv_id(url)
+            if arxiv_id:
+                return arxiv_id
+
+    for key in ("paper_url", "openalex_url", "doi"):
+        value = str(candidate.get(key, "")).strip()
+        arxiv_id = _normalize_arxiv_id(value)
+        if arxiv_id:
+            return arxiv_id
+    return ""
+
+
+def _normalize_arxiv_id(value: str) -> str:
+    if not value:
+        return ""
+    normalized = value.strip()
+    normalized = normalized.replace("http://", "https://")
+    prefixes = (
+        "https://arxiv.org/abs/",
+        "https://arxiv.org/pdf/",
+        "https://www.arxiv.org/abs/",
+        "https://www.arxiv.org/pdf/",
+        "arxiv:",
+        "ArXiv:",
+    )
+    for prefix in prefixes:
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
+            break
+    normalized = normalized.removesuffix(".pdf")
+    normalized = normalized.strip("/")
+    return normalized if normalized else ""
+
+
+def _build_arxiv_abs_url(arxiv_id: str) -> str:
+    if not arxiv_id:
+        return ""
+    return f"https://arxiv.org/abs/{arxiv_id}"
+
+
+def _build_arxiv_pdf_url(arxiv_id: str) -> str:
+    if not arxiv_id:
+        return ""
+    return f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+
+
+def _is_arxiv_url(url: str) -> bool:
+    lowered = url.lower()
+    return "arxiv.org/abs/" in lowered or "arxiv.org/pdf/" in lowered
