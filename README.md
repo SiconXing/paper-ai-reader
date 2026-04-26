@@ -125,7 +125,7 @@ python3 main.py read \
 
 ```bash
 python3 main.py download \
-  --input data/papers.jsonl \
+  --input data/selected_papers_2025.jsonl \
   --output-dir downloads/papers \
   --log-output data/download_log.json
 ```
