@@ -5,3 +5,4 @@ data/
 downloads/
 .venv/
 test_api.py
+.DS_Store

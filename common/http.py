@@ -1,6 +1,6 @@
 import json
-import ssl
 import socket
+import ssl
 import time
 import urllib.parse
 import urllib.request
@@ -16,7 +16,11 @@ DEFAULT_HEADERS = {
 }
 
 
-def _urlopen_with_retries(request: urllib.request.Request, context: ssl.SSLContext, timeout: int) -> urllib.request.addinfourl:
+def _urlopen_with_retries(
+    request: urllib.request.Request,
+    context: ssl.SSLContext,
+    timeout: int,
+) -> urllib.request.addinfourl:
     max_attempts = 4
     delay = 2.0
 
@@ -29,7 +33,7 @@ def _urlopen_with_retries(request: urllib.request.Request, context: ssl.SSLConte
                 delay *= 2
                 continue
             raise
-        except (URLError, socket.timeout, ssl.SSLError, IncompleteRead) as exc:
+        except (URLError, socket.timeout, ssl.SSLError, IncompleteRead):
             if attempt < max_attempts:
                 time.sleep(delay)
                 delay *= 2

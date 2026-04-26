@@ -6,7 +6,7 @@ from .downloader import download_papers, load_papers_from_json
 
 
 def add_loader_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.add_argument("--input", required=True, help="Path to the JSON file produced by the main pipeline.")
+    parser.add_argument("--input", required=True, help="Path to the JSON or JSONL file produced by the pipeline.")
     parser.add_argument(
         "--output-dir",
         default="downloads",

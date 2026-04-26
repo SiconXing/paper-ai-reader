@@ -2,30 +2,25 @@ import argparse
 import json
 from pathlib import Path
 
-from loader.downloader import download_papers
-from .output import write_csv, write_json, write_report
-from .pipeline import run_pipeline
-from .sources import CONFERENCES
+from load.downloader import download_papers
+
+from common.storage import iter_records
+
+from .output import write_report
+from .pipeline import run_read_pipeline
 
 
-def add_reader_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+def add_read_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
-        "--conferences",
-        nargs="*",
-        default=["cvpr", "iccv", "eccv", "nips", "icml", "iclr"],
-        help="Conference aliases, e.g. cvpr iclr acl.",
-    )
-    parser.add_argument("--year", type=int, required=False, help="Target publication year.")
-    parser.add_argument(
-        "--limit-per-conf",
-        type=int,
-        default=10,
-        help="Maximum number of papers to fetch for each conference.",
+        "--input",
+        type=str,
+        default="data/fetched_papers.jsonl",
+        help="Path to the fetched JSON or JSONL file.",
     )
     parser.add_argument(
         "--interest",
         type=str,
-        default="",
+        required=True,
         help="Your research interests, used for AI filtering.",
     )
     parser.add_argument(
@@ -35,15 +30,10 @@ def add_reader_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         help="Minimum AI interest score to keep a paper.",
     )
     parser.add_argument(
-        "--skip-ai",
-        action="store_true",
-        help="Fetch papers only, do not call the AI ranking step.",
-    )
-    parser.add_argument(
         "--output",
         type=str,
-        default="data/papers.json",
-        help="Path to the output JSON file.",
+        default="data/selected_papers.jsonl",
+        help="Path to the output JSONL file.",
     )
     parser.add_argument(
         "--export-csv",
@@ -54,7 +44,7 @@ def add_reader_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         "--csv-output",
         type=str,
         default="",
-        help="Optional CSV output path. Defaults to the JSON output path with .csv suffix.",
+        help="Optional CSV output path. Defaults to the JSONL output path with .csv suffix.",
     )
     parser.add_argument(
         "--generate-report",
@@ -65,7 +55,7 @@ def add_reader_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         "--report-output",
         type=str,
         default="",
-        help="Optional report path. Defaults to the JSON output path with .md suffix.",
+        help="Optional report path. Defaults to the JSONL output path with .md suffix.",
     )
     parser.add_argument(
         "--download-pdfs",
@@ -95,42 +85,25 @@ def add_reader_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         default=0,
         help="Maximum number of PDFs to download. 0 means no limit.",
     )
-    parser.add_argument(
-        "--list-conferences",
-        action="store_true",
-        help="Print the supported conference aliases and exit.",
-    )
     return parser
 
 
-def execute_reader(args: argparse.Namespace) -> int:
-    if args.list_conferences:
-        for alias, config in sorted(CONFERENCES.items()):
-            print(f"{alias}\t{config.name}\t{config.stream_id}")
-        return 0
-
-    if not args.year:
-        raise ValueError("--year is required unless --list-conferences is used.")
-
-    if not args.skip_ai and not args.interest.strip():
-        raise ValueError("--interest is required unless --skip-ai is used.")
-
-    results = run_pipeline(
-        conference_aliases=args.conferences,
-        year=args.year,
-        limit_per_conf=args.limit_per_conf,
-        interest=args.interest,
-        min_score=args.min_score,
-        skip_ai=args.skip_ai,
-    )
-
+def execute_read(args: argparse.Namespace) -> int:
+    input_path = Path(args.input)
     output_path = Path(args.output)
-    write_json(output_path, results)
 
     csv_path = None
     if args.export_csv:
         csv_path = Path(args.csv_output) if args.csv_output else output_path.with_suffix(".csv")
-        write_csv(csv_path, results)
+
+    stats = run_read_pipeline(
+        input_path=input_path,
+        output_path=output_path,
+        interest=args.interest,
+        min_score=args.min_score,
+        export_csv=args.export_csv,
+        csv_output_path=csv_path,
+    )
 
     report_path = None
     if args.generate_report:
@@ -139,30 +112,29 @@ def execute_reader(args: argparse.Namespace) -> int:
         )
         write_report(
             report_path,
-            results,
+            output_path,
             interest=args.interest,
-            skip_ai=args.skip_ai,
             min_score=args.min_score,
         )
 
     download_results = []
     if args.download_pdfs:
         download_results = download_papers(
-            results,
+            iter_records(output_path),
             output_dir=Path(args.pdf_dir),
             selected_only=not args.download_all,
             max_papers=args.max_downloads,
         )
-        write_json(output_path, results)
         if args.pdf_log_output:
             log_path = Path(args.pdf_log_output)
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_path.write_text(json.dumps(download_results, ensure_ascii=False, indent=2), encoding="utf-8")
+            log_path.write_text(
+                json.dumps(download_results, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
             print(f"Wrote PDF download log to {log_path}")
 
-    total = len(results)
-    kept = sum(1 for item in results if item.get("selected", True))
-    print(f"Wrote {total} papers to {output_path}")
+    print(f"Wrote {stats['total']} papers to {output_path}")
     if csv_path:
         print(f"Wrote CSV to {csv_path}")
     if report_path:
@@ -175,6 +147,5 @@ def execute_reader(args: argparse.Namespace) -> int:
         print(
             f"PDF download summary: downloaded={downloaded}, skipped={skipped}, missing_pdf={missing_pdf}, failed={failed}"
         )
-    if not args.skip_ai:
-        print(f"Selected {kept} papers with score >= {args.min_score}")
+    print(f"Selected {stats['kept']} papers with score >= {args.min_score}")
     return 0

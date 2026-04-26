@@ -1,12 +1,11 @@
 import json
 import os
-from typing import List
 
-from .http import post_json
-from .models import Paper
+from common.http import post_json
+from common.models import Paper
 
 
-def score_papers_with_ai(papers: List[Paper], interest: str, min_score: int) -> List[Paper]:
+def score_paper_with_ai(paper: Paper, interest: str, min_score: int) -> Paper:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is required for AI filtering.")
@@ -14,19 +13,18 @@ def score_papers_with_ai(papers: List[Paper], interest: str, min_score: int) -> 
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
-    for paper in papers:
-        result = _score_single_paper(
-            base_url=base_url,
-            api_key=api_key,
-            model=model,
-            interest=interest,
-            paper=paper,
-        )
-        paper.interest_score = int(result.get("score", 0))
-        paper.recommendation = str(result.get("recommendation", "skip"))
-        paper.reason = str(result.get("reason", ""))
-        paper.selected = paper.interest_score >= min_score
-    return papers
+    result = _score_single_paper(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        interest=interest,
+        paper=paper,
+    )
+    paper.interest_score = int(result.get("score", 0))
+    paper.recommendation = str(result.get("recommendation", "skip"))
+    paper.reason = str(result.get("reason", ""))
+    paper.selected = paper.interest_score >= min_score
+    return paper
 
 
 def _score_single_paper(

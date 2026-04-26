@@ -1,16 +1,17 @@
-import json
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 from urllib.error import HTTPError, URLError
+
 from tqdm import tqdm
 
-from reader.fetchers import find_arxiv_match_by_title
-from reader.http import download_file
+from common.http import download_file
+from common.storage import read_records
+from fetch.fetchers import find_arxiv_match_by_title
 
 
 def load_papers_from_json(input_path: Path) -> List[Dict[str, object]]:
-    return json.loads(input_path.read_text(encoding="utf-8"))
+    return read_records(input_path)
 
 
 def download_papers(
@@ -22,18 +23,16 @@ def download_papers(
 ) -> List[Dict[str, object]]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 转换为列表以便计算总数
-    papers_list = list(papers)
-    # 过滤出需要处理的论文
-    filtered_papers = [p for p in papers_list if not selected_only or bool(p.get("selected", False))]
-    if max_papers > 0:
-        filtered_papers = filtered_papers[:max_papers]
-
     results: List[Dict[str, object]] = []
     downloaded = 0
-    
-    # 显示下载进度
-    for paper in tqdm(filtered_papers, desc="Downloading papers"):
+    processed = 0
+
+    for paper in tqdm(papers, desc="Downloading papers"):
+        if selected_only and not bool(paper.get("selected", False)):
+            continue
+        if max_papers > 0 and processed >= max_papers:
+            break
+        processed += 1
         _hydrate_missing_download_sources(paper)
         sources = _build_download_sources(paper)
         filename = _build_filename(paper)

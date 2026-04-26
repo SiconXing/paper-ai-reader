@@ -4,8 +4,9 @@ dotenv.load_dotenv()
 
 import argparse
 
-from loader.cli import add_loader_arguments, execute_loader
-from reader.cli import add_reader_arguments, execute_reader
+from fetch.cli import add_fetch_arguments, execute_fetch
+from load.cli import add_loader_arguments, execute_loader
+from read.cli import add_read_arguments, execute_read
 
 
 def build_root_parser() -> argparse.ArgumentParser:
@@ -14,12 +15,19 @@ def build_root_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    collect_parser = subparsers.add_parser(
-        "collect",
-        help="Fetch papers, enrich abstracts, rank with AI, and optionally download PDFs.",
+    fetch_parser = subparsers.add_parser(
+        "fetch",
+        help="Fetch papers and enrich them with metadata into a JSONL file.",
     )
-    add_reader_arguments(collect_parser)
-    collect_parser.set_defaults(handler=execute_reader)
+    add_fetch_arguments(fetch_parser)
+    fetch_parser.set_defaults(handler=execute_fetch)
+
+    read_parser = subparsers.add_parser(
+        "read",
+        help="Read fetched papers, score them with AI, and optionally download PDFs.",
+    )
+    add_read_arguments(read_parser)
+    read_parser.set_defaults(handler=execute_read)
 
     download_parser = subparsers.add_parser(
         "download",

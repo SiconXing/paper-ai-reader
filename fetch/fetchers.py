@@ -1,11 +1,13 @@
-import arxiv
-from difflib import SequenceMatcher
 import time
 import urllib.parse
-from typing import Dict, List
+from difflib import SequenceMatcher
+from typing import Dict, Iterable, Iterator, List
 
-from .http import get_json
-from .models import Paper
+import arxiv
+
+from common.http import get_json
+from common.models import Paper
+
 from .sources import ConferenceConfig
 
 
@@ -24,11 +26,7 @@ def fetch_dblp_papers(conference: ConferenceConfig, year: int, limit: int) -> Li
             "format": "json",
         },
     )
-    hits = (
-        payload.get("result", {})
-        .get("hits", {})
-        .get("hit", [])
-    )
+    hits = payload.get("result", {}).get("hits", {}).get("hit", [])
 
     papers: List[Paper] = []
     for hit in hits:
@@ -41,7 +39,7 @@ def fetch_dblp_papers(conference: ConferenceConfig, year: int, limit: int) -> Li
             continue
         if venue not in conference.allowed_venues:
             continue
-        if entry_type != "Conference and Workshop Papers" and entry_type != "Journal Articles":
+        if entry_type not in {"Conference and Workshop Papers", "Journal Articles"}:
             continue
         if _looks_like_proceedings(title):
             continue
@@ -57,16 +55,14 @@ def fetch_dblp_papers(conference: ConferenceConfig, year: int, limit: int) -> Li
     return _deduplicate(papers)[:limit]
 
 
-def enrich_with_openalex(papers: List[Paper]) -> List[Paper]:
-    enriched: List[Paper] = []
+def enrich_with_openalex(papers: Iterable[Paper]) -> Iterator[Paper]:
     for paper in papers:
         try:
-            enriched.append(_enrich_single_paper(paper))
+            yield _enrich_single_paper(paper)
         except Exception as exc:
             print(f"Warning: OpenAlex enrichment failed for '{paper.title[:80]}': {exc}")
-            enriched.append(paper)
+            yield paper
         time.sleep(0.5)
-    return enriched
 
 
 def _enrich_single_paper(paper: Paper) -> Paper:
@@ -282,13 +278,6 @@ def _is_arxiv_url(url: str) -> bool:
     return "arxiv.org/abs/" in lowered or "arxiv.org/pdf/" in lowered
 
 
-def _search_arxiv_for_pdf(title: str, year: int) -> str:
-    match = find_arxiv_match_by_title(title, year)
-    if not match:
-        return ""
-    return str(match["arxiv_pdf_url"])
-
-
 def find_arxiv_match_by_title(title: str, year: int) -> Dict[str, str]:
     client = arxiv.Client()
     queries = [
@@ -331,7 +320,12 @@ def find_arxiv_match_by_title(title: str, year: int) -> Dict[str, str]:
     return best_match
 
 
-def _score_arxiv_candidate(query_title: str, query_year: int, candidate_title: str, candidate_year: int) -> float:
+def _score_arxiv_candidate(
+    query_title: str,
+    query_year: int,
+    candidate_title: str,
+    candidate_year: int,
+) -> float:
     normalized_query = _normalize_for_match(query_title)
     normalized_candidate = _normalize_for_match(candidate_title)
     similarity = SequenceMatcher(None, normalized_query, normalized_candidate).ratio()
