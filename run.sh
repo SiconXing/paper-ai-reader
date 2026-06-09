@@ -31,7 +31,7 @@ INTEREST="我关注控制决策算法在机器人和自动驾驶领域中的应�
 MIN_SCORE=70
 
 # 数据目录
-DATA_DIR="data/control_decision_papers"
+DATA_DIR="data/${YEAR}"
 
 # 抓取结果输出路径
 FETCH_OUTPUT="${DATA_DIR}/fetched_papers_${YEAR}.jsonl"
@@ -46,9 +46,9 @@ CSV_OUTPUT="${DATA_DIR}/papers_${YEAR}.csv"
 REPORT_OUTPUT="${DATA_DIR}/papers_${YEAR}_report.md"
 
 # PDF 下载配置
-DOWNLOAD_PDFS=false        # 是否下载 PDF（true/false）
-PDF_DIR="downloads/papers"
-PDF_LOG_OUTPUT=""          # 下载日志路径（留空则不输出）
+DOWNLOAD_PDFS=true        # 是否下载 PDF（true/false）
+PDF_DIR="downloads/papers/${YEAR}"
+PDF_LOG_OUTPUT="${DATA_DIR}/download_log_${YEAR}.txt"          # 下载日志路径（留空则不输出）
 
 # CSV / 报告开关
 EXPORT_CSV=true
