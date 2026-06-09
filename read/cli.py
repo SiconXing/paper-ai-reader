@@ -36,6 +36,12 @@ def add_read_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         help="Path to the output JSONL file.",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=3,
+        help="Number of concurrent AI scoring workers.",
+    )
+    parser.add_argument(
         "--export-csv",
         action="store_true",
         help="Also export the results to CSV. Disabled by default.",
@@ -85,6 +91,12 @@ def add_read_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         default=0,
         help="Maximum number of PDFs to download. 0 means no limit.",
     )
+    parser.add_argument(
+        "--download-workers",
+        type=int,
+        default=4,
+        help="Number of concurrent PDF download workers.",
+    )
     return parser
 
 
@@ -103,6 +115,7 @@ def execute_read(args: argparse.Namespace) -> int:
         min_score=args.min_score,
         export_csv=args.export_csv,
         csv_output_path=csv_path,
+        workers=max(1, args.workers),
     )
 
     report_path = None
@@ -124,6 +137,7 @@ def execute_read(args: argparse.Namespace) -> int:
             output_dir=Path(args.pdf_dir),
             selected_only=not args.download_all,
             max_papers=args.max_downloads,
+            workers=max(1, args.download_workers),
         )
         if args.pdf_log_output:
             log_path = Path(args.pdf_log_output)

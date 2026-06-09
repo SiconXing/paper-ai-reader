@@ -1,7 +1,10 @@
-import time
+import hashlib
+import json
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
-from typing import Dict, Iterable, Iterator, List
+from pathlib import Path
+from typing import Dict, Iterable, Iterator, List, Optional
 
 import arxiv
 
@@ -55,23 +58,54 @@ def fetch_dblp_papers(conference: ConferenceConfig, year: int, limit: int) -> Li
     return _deduplicate(papers)[:limit]
 
 
-def enrich_with_openalex(papers: Iterable[Paper]) -> Iterator[Paper]:
-    for paper in papers:
-        try:
-            yield _enrich_single_paper(paper)
-        except Exception as exc:
-            print(f"Warning: OpenAlex enrichment failed for '{paper.title[:80]}': {exc}")
-            yield paper
-        time.sleep(0.5)
+def enrich_with_openalex(
+    papers: Iterable[Paper],
+    workers: int = 1,
+    cache_dir: Optional[Path] = None,
+    arxiv_fallback: bool = True,
+) -> Iterator[Paper]:
+    if workers <= 1:
+        for paper in papers:
+            yield _safe_enrich_single_paper(
+                paper,
+                cache_dir=cache_dir,
+                arxiv_fallback=arxiv_fallback,
+            )
+        return
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        yield from executor.map(
+            lambda paper: _safe_enrich_single_paper(
+                paper,
+                cache_dir=cache_dir,
+                arxiv_fallback=arxiv_fallback,
+            ),
+            papers,
+        )
 
 
-def _enrich_single_paper(paper: Paper) -> Paper:
-    params = {
-        "search": paper.title,
-        "filter": f"publication_year:{paper.year}",
-        "per-page": 5,
-    }
-    payload = get_json(OPENALEX_API, params=params)
+def _safe_enrich_single_paper(
+    paper: Paper,
+    cache_dir: Optional[Path],
+    arxiv_fallback: bool,
+) -> Paper:
+    try:
+        return _enrich_single_paper(
+            paper,
+            cache_dir=cache_dir,
+            arxiv_fallback=arxiv_fallback,
+        )
+    except Exception as exc:
+        print(f"Warning: OpenAlex enrichment failed for '{paper.title[:80]}': {exc}")
+        return paper
+
+
+def _enrich_single_paper(
+    paper: Paper,
+    cache_dir: Optional[Path] = None,
+    arxiv_fallback: bool = True,
+) -> Paper:
+    payload = _get_openalex_payload(paper, cache_dir=cache_dir)
     candidates = payload.get("results", [])
     best = _select_best_match(candidates, paper.title)
     if best:
@@ -86,7 +120,7 @@ def _enrich_single_paper(paper: Paper) -> Paper:
         if not paper.doi:
             paper.doi = best.get("doi", "") or ""
 
-    if not paper.arxiv_pdf_url and not paper.pdf_url:
+    if arxiv_fallback and not paper.arxiv_pdf_url and not paper.pdf_url:
         arxiv_match = find_arxiv_match_by_title(paper.title, paper.year)
         if arxiv_match:
             paper.arxiv_id = arxiv_match["arxiv_id"]
@@ -94,6 +128,35 @@ def _enrich_single_paper(paper: Paper) -> Paper:
             paper.arxiv_pdf_url = arxiv_match["arxiv_pdf_url"]
             paper.pdf_url = arxiv_match["arxiv_pdf_url"]
     return paper
+
+
+def _get_openalex_payload(paper: Paper, cache_dir: Optional[Path]) -> Dict[str, object]:
+    cache_path = _openalex_cache_path(paper, cache_dir)
+    if cache_path and cache_path.exists():
+        try:
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+
+    params = {
+        "search": paper.title,
+        "filter": f"publication_year:{paper.year}",
+        "per-page": 5,
+    }
+    payload = get_json(OPENALEX_API, params=params)
+    if cache_path:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return payload
+
+
+def _openalex_cache_path(paper: Paper, cache_dir: Optional[Path]) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    cache_key = hashlib.sha256(
+        f"{paper.year}:{paper.title.lower()}".encode("utf-8")
+    ).hexdigest()
+    return cache_dir / "openalex" / f"{cache_key}.json"
 
 
 def _select_best_match(candidates: List[Dict[str, object]], title: str) -> Dict[str, object]:

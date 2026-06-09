@@ -26,6 +26,23 @@ def add_fetch_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
         help="Path to the output JSONL file.",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=6,
+        help="Number of concurrent OpenAlex enrichment workers.",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default=".cache",
+        help="Directory used to cache OpenAlex responses. Use an empty value to disable.",
+    )
+    parser.add_argument(
+        "--no-arxiv-fallback",
+        action="store_true",
+        help="Skip extra arXiv title searches when OpenAlex has no downloadable source.",
+    )
+    parser.add_argument(
         "--list-conferences",
         action="store_true",
         help="Print the supported conference aliases and exit.",
@@ -43,11 +60,15 @@ def execute_fetch(args: argparse.Namespace) -> int:
         raise ValueError("--year is required unless --list-conferences is used.")
 
     output_path = Path(args.output)
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
     total = run_fetch_pipeline(
         conference_aliases=args.conferences,
         year=args.year,
         limit_per_conf=args.limit_per_conf,
         output_path=output_path,
+        workers=max(1, args.workers),
+        cache_dir=cache_dir,
+        arxiv_fallback=not args.no_arxiv_fallback,
     )
     print(f"Wrote {total} papers to {output_path}")
     return 0

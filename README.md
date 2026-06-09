@@ -66,6 +66,7 @@ python3 main.py fetch \
   --conferences cvpr iccv iclr nips \
   --year 2025 \
   --limit-per-conf 50 \
+  --workers 6 \
   --output data/fetched_papers_2025.jsonl
 ```
 
@@ -76,6 +77,7 @@ python3 main.py read \
   --input data/fetched_papers_2025.jsonl \
   --interest "我关注多模态大模型、Agent、RAG、长上下文、文档理解和高质量评测方法" \
   --min-score 70 \
+  --workers 3 \
   --export-csv \
   --generate-report \
   --output data/selected_papers_2025.jsonl
@@ -127,8 +129,18 @@ python3 main.py read \
 python3 main.py download \
   --input data/selected_papers_2025.jsonl \
   --output-dir downloads/papers \
+  --workers 4 \
   --log-output data/download_log.json
 ```
+
+## 性能参数
+
+- `fetch --workers` 控制 OpenAlex 元数据富集并发数，默认 `6`
+- `fetch --cache-dir` 会缓存 OpenAlex 响应，默认 `.cache`
+- `fetch --no-arxiv-fallback` 会跳过额外 arXiv 标题搜索，适合只想快速抓标题和摘要的场景
+- `read --workers` 控制 AI 评分并发数，默认 `3`
+- `read --download-workers` 控制 `read --download-pdfs` 后续 PDF 下载并发数，默认 `4`
+- `download --workers` 控制独立 PDF 下载并发数，默认 `4`
 
 ## 输出字段
 

@@ -22,16 +22,16 @@ CONFERENCES=(cvpr iccv eccv nips icml iclr)
 YEAR=2025
 
 # 每个会议最多抓取论文数
-LIMIT_PER_CONF=5
+LIMIT_PER_CONF=5300
 
 # AI 筛选用的研究兴趣描述
-INTEREST="我关注多模态大模型、Agent、RAG、长上下文、文档理解和高质量评测方法"
+INTEREST="我关注控制决策算法在机器人和自动驾驶领域中的应用，尤其是强化学习和模仿学习方面的最新进展。"
 
 # 最低兴趣分数（0-100）
 MIN_SCORE=70
 
 # 数据目录
-DATA_DIR="data"
+DATA_DIR="data/control_decision_papers"
 
 # 抓取结果输出路径
 FETCH_OUTPUT="${DATA_DIR}/fetched_papers_${YEAR}.jsonl"

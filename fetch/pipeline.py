@@ -11,6 +11,9 @@ def run_fetch_pipeline(
     year: int,
     limit_per_conf: int,
     output_path,
+    workers: int = 1,
+    cache_dir=None,
+    arxiv_fallback: bool = True,
 ) -> int:
     written = 0
     with JsonlWriter(output_path) as writer:
@@ -21,7 +24,12 @@ def run_fetch_pipeline(
             conference = CONFERENCES[key]
             papers = fetch_dblp_papers(conference, year, limit_per_conf)
             for paper in tqdm(
-                enrich_with_openalex(papers),
+                enrich_with_openalex(
+                    papers,
+                    workers=workers,
+                    cache_dir=cache_dir,
+                    arxiv_fallback=arxiv_fallback,
+                ),
                 total=len(papers),
                 desc=f"Enriching papers with OpenAlex ({conference.name})",
                 leave=False,

@@ -1,6 +1,7 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, Iterator, List, Tuple
 from urllib.error import HTTPError, URLError
 
 from tqdm import tqdm
@@ -20,46 +21,84 @@ def download_papers(
     selected_only: bool = True,
     max_papers: int = 0,
     overwrite: bool = False,
+    workers: int = 1,
 ) -> List[Dict[str, object]]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    results: List[Dict[str, object]] = []
-    downloaded = 0
+    candidates = list(
+        _iter_download_candidates(
+            papers,
+            selected_only=selected_only,
+            max_papers=max_papers,
+        )
+    )
+    if workers <= 1:
+        return [
+            _download_single_paper(
+                paper,
+                output_dir=output_dir,
+                overwrite=overwrite,
+            )
+            for paper in tqdm(candidates, desc="Downloading papers")
+        ]
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(
+            tqdm(
+                executor.map(
+                    lambda paper: _download_single_paper(
+                        paper,
+                        output_dir=output_dir,
+                        overwrite=overwrite,
+                    ),
+                    candidates,
+                ),
+                total=len(candidates),
+                desc="Downloading papers",
+            )
+        )
+
+
+def _iter_download_candidates(
+    papers: Iterable[Dict[str, object]],
+    selected_only: bool,
+    max_papers: int,
+) -> Iterator[Dict[str, object]]:
     processed = 0
 
-    for paper in tqdm(papers, desc="Downloading papers"):
+    for paper in papers:
         if selected_only and not bool(paper.get("selected", False)):
             continue
         if max_papers > 0 and processed >= max_papers:
             break
         processed += 1
-        _hydrate_missing_download_sources(paper)
-        sources = _build_download_sources(paper)
-        filename = _build_filename(paper)
-        target_path = output_dir / filename
+        yield paper
 
-        if not sources:
-            results.append(_result_row(paper, target_path, "missing_pdf", "no downloadable source"))
-            continue
-        if target_path.exists() and not overwrite:
-            results.append(_result_row(paper, target_path, "skipped", "already exists"))
-            downloaded += 1
-            continue
 
-        last_error = ""
-        source_name = ""
-        source_url = ""
-        for source_name, source_url in sources:
-            try:
-                download_file(source_url, target_path)
-                results.append(_result_row(paper, target_path, "downloaded", f"{source_name}: ok", source_url))
-                downloaded += 1
-                break
-            except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-                last_error = f"{source_name}: {exc}"
-        else:
-            results.append(_result_row(paper, target_path, "failed", last_error or "download failed", source_url))
-    return results
+def _download_single_paper(
+    paper: Dict[str, object],
+    output_dir: Path,
+    overwrite: bool,
+) -> Dict[str, object]:
+    _hydrate_missing_download_sources(paper)
+    sources = _build_download_sources(paper)
+    filename = _build_filename(paper)
+    target_path = output_dir / filename
+
+    if not sources:
+        return _result_row(paper, target_path, "missing_pdf", "no downloadable source")
+    if target_path.exists() and not overwrite:
+        return _result_row(paper, target_path, "skipped", "already exists")
+
+    last_error = ""
+    source_url = ""
+    for source_name, source_url in sources:
+        try:
+            download_file(source_url, target_path)
+            return _result_row(paper, target_path, "downloaded", f"{source_name}: ok", source_url)
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            last_error = f"{source_name}: {exc}"
+    return _result_row(paper, target_path, "failed", last_error or "download failed", source_url)
 
 
 def _build_filename(paper: Dict[str, object]) -> str:

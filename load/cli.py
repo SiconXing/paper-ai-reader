@@ -24,6 +24,12 @@ def add_loader_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         help="Maximum number of papers to download. 0 means no limit.",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of concurrent PDF download workers.",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Overwrite existing PDFs.",
@@ -46,6 +52,7 @@ def execute_loader(args: argparse.Namespace) -> int:
         selected_only=not args.all_papers,
         max_papers=args.max_papers,
         overwrite=args.overwrite,
+        workers=max(1, args.workers),
     )
 
     downloaded = sum(1 for row in results if row["status"] == "downloaded")
